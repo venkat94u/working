@@ -1,0 +1,281 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Delta Exchange — Buy/Sell Dashboard (Mobile)</title>
+  <style>
+    :root{--bg:#0b1020;--card:#0f1724;--muted:#98a0b3;--accent:#00c853}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071028,#071224);font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .wrap{max-width:980px;margin:10px auto;padding:10px}
+    header{color:#fff;display:flex;gap:10px;align-items:center;justify-content:space-between}
+    h1{font-size:18px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    select,input,button{padding:8px;border-radius:8px;border:0;background:rgba(255,255,255,0.03);color:#fff}
+    button{cursor:pointer}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .card{background:var(--card);padding:10px;border-radius:10px;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
+    .small{font-size:12px;color:var(--muted)}
+    .trade-list{max-height:300px;overflow:auto;padding:6px;margin-top:6px}
+    .trade {display:flex;justify-content:space-between;padding:6px;border-radius:6px;margin-bottom:6px;background:linear-gradient(90deg,rgba(255,255,255,0.01),transparent)}
+    .buy{color:#00e676} .sell{color:#ff5252}
+    .book{display:flex;gap:6px;justify-content:space-between}
+    .col{flex:1}
+    .muted{color:var(--muted)}
+    /* mobile tweaks */
+    @media (max-width:720px){
+      .grid{grid-template-columns:1fr; }
+      header{flex-direction:column;align-items:flex-start;gap:8px}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Delta Exchange — Buy/Sell Dashboard</h1>
+        <div class="small muted">Live trades & delta (mobile-friendly) — public feed, no API key needed.</div>
+      </div>
+
+      <div class="controls">
+        <select id="symbol">
+          <option>BTCUSDT</option>
+          <option>ETHUSDT</option>
+          <option>LINKUSDT</option>
+        </select>
+        <button id="connectBtn">Connect</button>
+        <button id="clearBtn">Clear</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="small muted">Symbol</div>
+            <div id="currSymbol" style="font-weight:700;font-size:18px">—</div>
+          </div>
+
+          <div style="text-align:right">
+            <div class="small muted">Cumulative Delta</div>
+            <div id="cumDelta" style="font-weight:700;font-size:18px">0</div>
+          </div>
+        </div>
+
+        <hr style="border:0;border-top:1px solid rgba(255,255,255,0.04);margin:8px 0">
+
+        <div style="display:flex;gap:8px;justify-content:space-between">
+          <div>
+            <div class="small muted">Buy Trades</div>
+            <div id="buyCount" style="font-weight:700">0</div>
+          </div>
+          <div>
+            <div class="small muted">Sell Trades</div>
+            <div id="sellCount" style="font-weight:700">0</div>
+          </div>
+          <div>
+            <div class="small muted">Recent Delta (last N)</div>
+            <div id="rollingDelta" style="font-weight:700">0</div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="small muted">Top of Book (Bids / Asks)</div>
+          <div class="book" id="bookTop" style="margin-top:6px">
+            <div class="col">
+              <div class="small muted">BIDS</div>
+              <div id="bids"></div>
+            </div>
+            <div class="col">
+              <div class="small muted">ASKS</div>
+              <div id="asks"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div class="small muted">Live trades (most recent first)</div>
+          </div>
+          <div class="small muted">Green = buy market | Red = sell market</div>
+        </div>
+
+        <div class="trade-list" id="trades"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // === CONFIG ===
+    const WS_URL = "wss://socket.delta.exchange"; // Delta Exchange WS (public)
+    const tradeChannel = "live_trades"; // channel names (if your endpoint uses different names, change here)
+    const depthChannel = "depth";        // some docs use 'orderbook' or 'depth' — try 'depth'
+
+    // state
+    let ws = null;
+    let symbolEl = document.getElementById('symbol');
+    let connectBtn = document.getElementById('connectBtn');
+    let clearBtn = document.getElementById('clearBtn');
+    const tradesEl = document.getElementById('trades');
+    const buyCountEl = document.getElementById('buyCount');
+    const sellCountEl = document.getElementById('sellCount');
+    const cumDeltaEl = document.getElementById('cumDelta');
+    const currSymbolEl = document.getElementById('currSymbol');
+    const bidsEl = document.getElementById('bids');
+    const asksEl = document.getElementById('asks');
+    const rollingDeltaEl = document.getElementById('rollingDelta');
+
+    let buyCount = 0, sellCount = 0, cumDelta = 0;
+    const rollingWindow = 50;
+    const recentDeltas = [];
+
+    function resetStats(){
+      buyCount = 0; sellCount = 0; cumDelta = 0;
+      recentDeltas.length = 0;
+      updateUI();
+      tradesEl.innerHTML = "";
+      bidsEl.innerHTML = ""; asksEl.innerHTML = "";
+    }
+
+    function updateUI(){
+      buyCountEl.textContent = buyCount;
+      sellCountEl.textContent = sellCount;
+      cumDeltaEl.textContent = cumDelta.toLocaleString();
+      currSymbolEl.textContent = symbolEl.value;
+      let r = recentDeltas.reduce((s,v)=>s+v,0);
+      rollingDeltaEl.textContent = r;
+    }
+
+    // simple helper to prepend trade
+    function pushTradeRow(side, price, size, time){
+      const div = document.createElement('div');
+      div.className = 'trade ' + (side==='buy' ? 'buy' : 'sell');
+      div.innerHTML = `<div style="font-weight:700">${side.toUpperCase()}</div>
+                       <div style="text-align:right">${price} · ${size}</div>`;
+      tradesEl.prepend(div);
+      // limit
+      if(tradesEl.children.length > 200) tradesEl.removeChild(tradesEl.lastChild);
+    }
+
+    // SUBSCRIBE payload — adjustable channel names
+    function subscribe(symbol){
+      try {
+        const channels = [
+          { name: tradeChannel, symbols: [symbol] },
+          { name: depthChannel, symbols: [symbol] }
+        ];
+        const msg = { type: "subscribe", channels: channels };
+        ws.send(JSON.stringify(msg));
+      } catch(e){ console.warn("subscribe failed", e); }
+    }
+
+    // connect handler
+    function connect(){
+      if(ws) ws.close();
+      resetStats();
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = () => {
+        connectBtn.textContent = 'Connected';
+        connectBtn.style.background = "#0a8";
+        subscribe(symbolEl.value);
+      };
+
+      ws.onclose = (ev) => {
+        connectBtn.textContent = 'Connect';
+        connectBtn.style.background = "";
+        console.log('ws closed', ev);
+      };
+
+      ws.onerror = (err) => {
+        console.warn('ws error', err);
+      };
+
+      ws.onmessage = (evt) => {
+        try {
+          const d = JSON.parse(evt.data);
+          // Delta docs use a few types; we handle common ones:
+          // If trade message
+          if (d.type === "trade" || d.type === "update" || d.type === "trades") {
+            // handle single trade or array
+            const trades = Array.isArray(d.data) ? d.data : (d.data ? [d.data] : (d.trade ? [d.trade] : []));
+            trades.forEach(t => handleTrade(t));
+          }
+          // some payloads push 'type': 'live_trades' with data objects
+          else if (d.type === "live_trades" && d.data) {
+            const trades = Array.isArray(d.data) ? d.data : [d.data];
+            trades.forEach(t => handleTrade(t));
+          }
+          // depth/orderbook payload
+          else if (d.type === "depth" || d.type === "orderbook" || d.type === "l2_snapshot" || d.type==='orderbook.10') {
+            handleDepth(d);
+          }
+          // other channel containers
+          else if (d.channel === "trades" && d.data) {
+            const trades = Array.isArray(d.data) ? d.data : [d.data];
+            trades.forEach(t => handleTrade(t));
+          }
+        } catch(e){
+          // not JSON or parser error
+          // console.log('message', evt.data);
+        }
+      };
+    }
+
+    // parse trade object shapes used by Delta
+    function handleTrade(t){
+      // Delta trade object variants (common fields): side|size|price|symbol|timestamp
+      const side = (t.side || t.taker_side || t.direction || (t.buy ? 'buy' : t.sell ? 'sell' : null) || (t.maker_side ? (t.maker_side==='sell'?'buy':'sell') : null));
+      const price = t.price || t.p || t[0] || 0;
+      const size = t.size || t.qty || t.quantity || t.s || 0;
+
+      if(!side) return;
+      // update counts & delta
+      if(side === 'buy' || side === 'Buy' || side === 'BUY'){
+        buyCount += Number(size);
+        cumDelta += Number(size);
+        recentDeltas.push(Number(size));
+      } else {
+        sellCount += Number(size);
+        cumDelta -= Number(size);
+        recentDeltas.push(-Number(size));
+      }
+      // keep rolling window
+      if(recentDeltas.length > rollingWindow) recentDeltas.shift();
+      // push UI row
+      pushTradeRow(side, price, size, t.timestamp || t.ts || '');
+      updateUI();
+    }
+
+    // handle depth (top-of-book)
+    function handleDepth(d){
+      // depending on feed shape, d.bids/d.asks or d.data.bids etc.
+      const payload = d.data || d;
+      const bids = payload.bids || payload.buy || payload.asks ? (payload.bids || payload.buy) : null;
+      const asks = payload.asks || payload.sell || payload.asks ? (payload.asks || payload.sell) : null;
+      // some feeds send arrays of [price,qty]
+      const topBids = bids ? bids.slice(0,5) : [];
+      const topAsks = asks ? asks.slice(0,5) : [];
+      bidsEl.innerHTML = topBids.map(b => `<div class="small muted">${b[0]} · ${b[1]}</div>`).join('');
+      asksEl.innerHTML = topAsks.map(a => `<div class="small muted">${a[0]} · ${a[1]}</div>`).join('');
+    }
+
+    // UI wiring
+    connectBtn.addEventListener('click', () => {
+      if(ws && ws.readyState === WebSocket.OPEN) { ws.close(); connectBtn.textContent='Connect'; connectBtn.style.background=''; }
+      else connect();
+    });
+    clearBtn.addEventListener('click', resetStats);
+
+    // auto connect on load for default symbol
+    window.addEventListener('load', () => {
+      currSymbolEl.textContent = symbolEl.value;
+      connect();
+    });
+  })();
+  </script>
+</body>
+</html>
