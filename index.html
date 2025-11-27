@@ -1,281 +1,530 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Delta Exchange — Buy/Sell Dashboard (Mobile)</title>
-  <style>
-    :root{--bg:#0b1020;--card:#0f1724;--muted:#98a0b3;--accent:#00c853}
-    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071028,#071224);font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial}
-    .wrap{max-width:980px;margin:10px auto;padding:10px}
-    header{color:#fff;display:flex;gap:10px;align-items:center;justify-content:space-between}
-    h1{font-size:18px;margin:0}
-    .controls{display:flex;gap:8px;align-items:center}
-    select,input,button{padding:8px;border-radius:8px;border:0;background:rgba(255,255,255,0.03);color:#fff}
-    button{cursor:pointer}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
-    .card{background:var(--card);padding:10px;border-radius:10px;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.4)}
-    .small{font-size:12px;color:var(--muted)}
-    .trade-list{max-height:300px;overflow:auto;padding:6px;margin-top:6px}
-    .trade {display:flex;justify-content:space-between;padding:6px;border-radius:6px;margin-bottom:6px;background:linear-gradient(90deg,rgba(255,255,255,0.01),transparent)}
-    .buy{color:#00e676} .sell{color:#ff5252}
-    .book{display:flex;gap:6px;justify-content:space-between}
-    .col{flex:1}
-    .muted{color:var(--muted)}
-    /* mobile tweaks */
-    @media (max-width:720px){
-      .grid{grid-template-columns:1fr; }
-      header{flex-direction:column;align-items:flex-start;gap:8px}
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Orderflow — Mobile (Dynamic Binance List + 20min preload + FAR walls)</title>
+<style>
+:root{
+  --bg:#071226; --card:#0f2030; --muted:#9fb0c8; --accent:#00d084;
+  --buy:#66ffb2; --sell:#ff7b7b; --text:#e6f0fb;
+}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,Roboto,Arial;background:var(--bg);color:var(--text)}
+.wrap{max-width:1100px;margin:8px auto;padding:12px}
+.header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.title{font-size:16px;margin:0}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,input,button{padding:8px;border-radius:8px;border:0;background:#081726;color:var(--text);font-size:13px}
+button{cursor:pointer}
+.card{background:var(--card);padding:10px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.45);margin-top:10px}
+.row{display:flex;justify-content:space-between;align-items:center}
+.small{font-size:12px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:12px;margin-top:12px}
+@media (max-width:900px){ .grid{grid-template-columns:1fr} .header{flex-direction:column;align-items:flex-start} }
+.trade-list{height:240px;overflow:auto;padding:6px;margin-top:8px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent)}
+.trade{display:flex;justify-content:space-between;padding:6px;border-radius:6px;margin-bottom:4px;font-size:13px}
+.buy{color:var(--buy)}
+.sell{color:var(--sell)}
+.table{font-size:13px}
+.alertBox{padding:10px;border-radius:8px;margin-bottom:8px}
+.swing-high{background:rgba(255,60,60,0.06);border:1px solid rgba(255,60,60,0.14);color:#ffb3b3}
+.swing-low{background:rgba(0,200,120,0.04);border:1px solid rgba(0,200,120,0.12);color:#bfffe0}
+.footer-note{font-size:12px;color:var(--muted);margin-top:8px}
+.small-input{width:80px}
+pre.log{font-family:monospace;font-size:12px;line-height:1.2;color:var(--muted);max-height:160px;overflow:auto;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px}
+select.large{min-width:260px}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <h1 class="title">Orderflow — Mobile (Dynamic Binance List)</h1>
+      <div class="small">Preload: 20min trades + L2 snapshot · FAR walls (farthest) · swing detection</div>
+    </div>
+
+    <div class="controls">
+      <label class="small">Symbol</label>
+      <select id="symbol" class="large"><option>Loading symbols...</option></select>
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" style="display:none">Disconnect</button>
+      <span id="status" class="small">Disconnected</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
       <div>
-        <h1>Delta Exchange — Buy/Sell Dashboard</h1>
-        <div class="small muted">Live trades & delta (mobile-friendly) — public feed, no API key needed.</div>
-      </div>
-
-      <div class="controls">
-        <select id="symbol">
-          <option>BTCUSDT</option>
-          <option>ETHUSDT</option>
-          <option>LINKUSDT</option>
-        </select>
-        <button id="connectBtn">Connect</button>
-        <button id="clearBtn">Clear</button>
-      </div>
-    </header>
-
-    <div class="grid">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div class="small muted">Symbol</div>
-            <div id="currSymbol" style="font-weight:700;font-size:18px">—</div>
-          </div>
-
-          <div style="text-align:right">
-            <div class="small muted">Cumulative Delta</div>
-            <div id="cumDelta" style="font-weight:700;font-size:18px">0</div>
-          </div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid rgba(255,255,255,0.04);margin:8px 0">
-
-        <div style="display:flex;gap:8px;justify-content:space-between">
-          <div>
-            <div class="small muted">Buy Trades</div>
-            <div id="buyCount" style="font-weight:700">0</div>
-          </div>
-          <div>
-            <div class="small muted">Sell Trades</div>
-            <div id="sellCount" style="font-weight:700">0</div>
-          </div>
-          <div>
-            <div class="small muted">Recent Delta (last N)</div>
-            <div id="rollingDelta" style="font-weight:700">0</div>
-          </div>
-        </div>
-
-        <div style="margin-top:10px">
-          <div class="small muted">Top of Book (Bids / Asks)</div>
-          <div class="book" id="bookTop" style="margin-top:6px">
-            <div class="col">
-              <div class="small muted">BIDS</div>
-              <div id="bids"></div>
-            </div>
-            <div class="col">
-              <div class="small muted">ASKS</div>
-              <div id="asks"></div>
-            </div>
-          </div>
+        <div id="swingPanelContainer"></div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          <div class="small">Preload</div><div id="preloadStatus" class="small">not ready</div>
+          <div class="small">Cumulative Delta</div><div id="cumlDelta" class="small">0.000000</div>
+          <div class="small">Buy / Sell Vol</div><div id="vols" class="small">0 / 0</div>
+          <div class="small">Strength</div><div id="strength" class="small">—</div>
         </div>
       </div>
 
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div class="small muted">Live trades (most recent first)</div>
-          </div>
-          <div class="small muted">Green = buy market | Red = sell market</div>
+      <div style="text-align:right">
+        <div class="small">Tune</div>
+        <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:6px">
+          <label class="small">WallSize</label><input id="wallSize" class="small-input" value="200" />
+          <label class="small">Burst</label><input id="burstCnt" class="small-input" value="8" />
         </div>
-
-        <div class="trade-list" id="trades"></div>
       </div>
     </div>
   </div>
 
-  <script>
-  (function(){
-    // === CONFIG ===
-    const WS_URL = "wss://socket.delta.exchange"; // Delta Exchange WS (public)
-    const tradeChannel = "live_trades"; // channel names (if your endpoint uses different names, change here)
-    const depthChannel = "depth";        // some docs use 'orderbook' or 'depth' — try 'depth'
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="small">Sweep & Divergence</div>
+        <div style="margin-top:8px" id="sweepInfo">SweepHigh: — | SweepLow: —</div>
+        <div id="divergenceInfo" class="small">Divergence: —</div>
+      </div>
 
-    // state
-    let ws = null;
-    let symbolEl = document.getElementById('symbol');
-    let connectBtn = document.getElementById('connectBtn');
-    let clearBtn = document.getElementById('clearBtn');
-    const tradesEl = document.getElementById('trades');
-    const buyCountEl = document.getElementById('buyCount');
-    const sellCountEl = document.getElementById('sellCount');
-    const cumDeltaEl = document.getElementById('cumDelta');
-    const currSymbolEl = document.getElementById('currSymbol');
-    const bidsEl = document.getElementById('bids');
-    const asksEl = document.getElementById('asks');
-    const rollingDeltaEl = document.getElementById('rollingDelta');
+      <div class="card">
+        <div class="small">Recent Trades (live)</div>
+        <div id="trades" class="trade-list"></div>
+      </div>
 
-    let buyCount = 0, sellCount = 0, cumDelta = 0;
-    const rollingWindow = 50;
-    const recentDeltas = [];
+      <div class="card">
+        <div class="small">Logs</div>
+        <pre id="logs" class="log"></pre>
+      </div>
+    </div>
 
-    function resetStats(){
-      buyCount = 0; sellCount = 0; cumDelta = 0;
-      recentDeltas.length = 0;
-      updateUI();
-      tradesEl.innerHTML = "";
-      bidsEl.innerHTML = ""; asksEl.innerHTML = "";
+    <div>
+      <div class="card">
+        <div class="small">Top-of-book</div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px">
+          <div><div class="small">Best Bid</div><div id="bestBid" class="small">-</div></div>
+          <div><div class="small">Best Ask</div><div id="bestAsk" class="small">-</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="small">FAR Walls (top 10 each side — farthest from mid)</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1"><div class="small">BUY (farthest)</div><div id="topBids" class="table" style="max-height:320px;overflow:auto"></div></div>
+          <div style="flex:1"><div class="small">SELL (farthest)</div><div id="topAsks" class="table" style="max-height:320px;overflow:auto"></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="small">Controls</div>
+          <div>
+            <button id="clearBtn">Clear</button>
+            <button id="downloadBtn">Download L2 CSV</button>
+          </div>
+        </div>
+        <div class="small footer-note" style="margin-top:8px">Auto-reconnect enabled. Uses public CORS proxy for preload (may rate-limit). For production, host your own proxy.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="small">L2 Walls (depth20) — full</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+      <div><div class="small">BIDS</div><div id="buyWalls" class="table" style="max-height:240px;overflow:auto"></div></div>
+      <div><div class="small">ASKS</div><div id="sellWalls" class="table" style="max-height:240px;overflow:auto"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+  Version A — dynamic full code:
+  - CORS_PROXY used for REST: CORS_PROXY + REST_URL
+  - Preload: 20 minutes (aggTrades) + L2 depth snapshot
+  - FAR walls: top N farthest walls (by price distance from mid) with qty
+  - Swing detection: sweep + delta flip (plus optional flags)
+  - Star rating fixed and displayed
+  - Loads all Binance futures symbols from exchangeInfo via CORS proxy
+*/
+
+// ---------- CONFIG ----------
+const CORS_PROXY = 'https://corsproxy.io/?'; // public; replace with your own if rate-limited
+const API_REST_BASE = 'https://fapi.binance.com';
+const WS_BASE = 'wss://fstream.binance.com/stream?streams=';
+const PRELOAD_MINUTES = 20;            // user asked 20min preload
+const DEPTH_LIMIT = 2000;             // depth L2 limit request param (rest snapshot uses 500/1000/2000)
+const FAR_WALL_COUNT = 10;            // top far walls each side
+const MAX_TRADES_DISPLAY = 150;
+const BURST_WINDOW_MS = 2500;
+const CALIBRATION_SECONDS = 10;       // shorter on reload; adjust
+// ---------- STATE ----------
+let ws = null, running = false, symbol = '';
+let buyVol = 0, sellVol = 0, cumDelta = 0;
+let recentTrades = []; // {price, qty, side, ts}
+let bids = [], asks = [];
+let lastBestBid = null, lastBestAsk = null;
+let lastHigh = null, lastLow = null;
+let lastPrice = null, lastPrice2 = null;
+let lastDeltaSide = null;
+let lastOrderbook = null;
+let symbolsList = [];
+
+// UI refs
+const symbolEl = document.getElementById('symbol');
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const statusEl = document.getElementById('status');
+const tradesEl = document.getElementById('trades');
+const logsEl = document.getElementById('logs');
+const buyWallsEl = document.getElementById('buyWalls');
+const sellWallsEl = document.getElementById('sellWalls');
+const topBidsEl = document.getElementById('topBids');
+const topAsksEl = document.getElementById('topAsks');
+const bestBidEl = document.getElementById('bestBid');
+const bestAskEl = document.getElementById('bestAsk');
+const cumlEl = document.getElementById('cumlDelta');
+const volsEl = document.getElementById('vols');
+const strengthEl = document.getElementById('strength');
+const sweepInfoEl = document.getElementById('sweepInfo');
+const divergenceInfoEl = document.getElementById('divergenceInfo');
+const buyBurstEl = document.getElementById('buyBurst');
+const sellBurstEl = document.getElementById('sellBurst');
+const aggrEl = document.getElementById('aggr');
+const swingPanelContainer = document.getElementById('swingPanelContainer');
+const preloadStatusEl = document.getElementById('preloadStatus');
+const wallSizeInput = document.getElementById('wallSize');
+const burstCntInput = document.getElementById('burstCnt');
+const clearBtn = document.getElementById('clearBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+
+// helpers
+const f = v => (v === undefined || v === null) ? 0 : parseFloat(v);
+const now = () => Date.now();
+function log(s){ logsEl.textContent = `[${(new Date()).toLocaleTimeString()}] ${s}\n` + logsEl.textContent; if(logsEl.textContent.length>20000) logsEl.textContent=logsEl.textContent.slice(0,20000); }
+
+// ==== UTIL: REST fetch with cors proxy ====
+async function corsFetchJson(url){
+  const proxied = CORS_PROXY + encodeURIComponent(url);
+  const res = await fetch(proxied);
+  if(!res.ok) throw new Error(`Fetch ${url} failed ${res.status}`);
+  return res.json();
+}
+
+// ==== Load exchangeInfo & populate dropdown ====
+async function loadSymbols(){
+  try{
+    symbolEl.innerHTML = '<option>Loading symbols...</option>';
+    const url = API_REST_BASE + '/fapi/v1/exchangeInfo';
+    const data = await corsFetchJson(url);
+    // keep only USDT/perp or USD perpetual pairs (user asked many): we'll include symbols listed (futures)
+    symbolsList = (data.symbols || []).filter(s => s.status === 'TRADING').map(s => s.symbol);
+    // sort common ones first
+    const preferred = ['BTCUSDT','BTCUSD','ETHUSDT','ETHUSD','SOLUSDT','SOLUSD'];
+    const ordered = Array.from(new Set([...preferred, ...symbolsList]));
+    symbolEl.innerHTML = ordered.map(s=>`<option>${s}</option>`).join('');
+    log(`Loaded ${symbolsList.length} symbols`);
+  } catch(err){
+    log('Failed to load symbols: ' + err.message);
+    symbolEl.innerHTML = '<option>BTCUSDT</option><option>ETHUSDT</option>';
+  }
+}
+
+// ==== PRELOAD: 20 minutes of aggTrades + L2 snapshot ====
+async function preloadData(sym){
+  preloadStatusEl.textContent = 'preloading…';
+  buyVol = 0; sellVol = 0; cumDelta = 0; recentTrades = [];
+  try{
+    const end = Date.now();
+    const start = end - PRELOAD_MINUTES * 60 * 1000;
+    // aggTrades endpoint supports startTime & endTime
+    let from = start;
+    let all = [];
+    while(true){
+      const url = `${API_REST_BASE}/fapi/v1/aggTrades?symbol=${sym}&startTime=${from}&endTime=${end}&limit=1000`;
+      const chunk = await corsFetchJson(url);
+      if(!chunk || !chunk.length) break;
+      all = all.concat(chunk);
+      // break if last timestamp >= end or chunk < 1000
+      const lastTs = chunk[chunk.length-1].T || chunk[chunk.length-1].t;
+      if(lastTs >= end || chunk.length < 1000) break;
+      from = lastTs + 1;
+      if(all.length > 50000) break; // safety
     }
+    // normalize and calculate delta
+    all.forEach(a => {
+      const price = f(a.p || a.price);
+      const qty = f(a.q || a.qty || a.l);
+      // Binance aggTrade: 'm' true indicates maker was the seller (taker buy false?) — for simplicity use 'm'
+      const side = a.m ? 'sell' : 'buy';
+      const ts = a.T || a.T || (a.T||now());
+      recentTrades.push({price, qty, side, ts});
+      if(side==='buy'){ buyVol += qty; cumDelta += qty; } else { sellVol += qty; cumDelta -= qty; }
+    });
+    // snapshot depth (L2)
+    const depthUrl = `${API_REST_BASE}/fapi/v1/depth?symbol=${sym}&limit=1000`;
+    const depth = await corsFetchJson(depthUrl);
+    bids = (depth.bids || []).map(b=>[parseFloat(b[0]), parseFloat(b[1])]);
+    asks = (depth.asks || []).map(a=>[parseFloat(a[0]), parseFloat(a[1])]);
+    lastOrderbook = { bids: bids.slice(), asks: asks.slice() };
+    preloadStatusEl.textContent = `Ready (loaded ${Math.min(all.length,10000)} trades)`;
+    log(`Preload complete: ${all.length} trades, depth rows: bids ${bids.length} asks ${asks.length}`);
+    updateUI();
+    detectClustersAndSwing();
+    return true;
+  }catch(err){
+    preloadStatusEl.textContent = 'preload failed';
+    log('Preload error: ' + err.message);
+    return false;
+  }
+}
 
-    function updateUI(){
-      buyCountEl.textContent = buyCount;
-      sellCountEl.textContent = sellCount;
-      cumDeltaEl.textContent = cumDelta.toLocaleString();
-      currSymbolEl.textContent = symbolEl.value;
-      let r = recentDeltas.reduce((s,v)=>s+v,0);
-      rollingDeltaEl.textContent = r;
-    }
+// ==== WebSocket connect (combined streams) ====
+function buildWsUrl(sym){
+  // use trade + depth20 combined
+  const s = sym.toLowerCase();
+  return `${WS_BASE}${s}@trade/${s}@depth20@100ms`;
+}
 
-    // simple helper to prepend trade
-    function pushTradeRow(side, price, size, time){
-      const div = document.createElement('div');
-      div.className = 'trade ' + (side==='buy' ? 'buy' : 'sell');
-      div.innerHTML = `<div style="font-weight:700">${side.toUpperCase()}</div>
-                       <div style="text-align:right">${price} · ${size}</div>`;
-      tradesEl.prepend(div);
-      // limit
-      if(tradesEl.children.length > 200) tradesEl.removeChild(tradesEl.lastChild);
-    }
-
-    // SUBSCRIBE payload — adjustable channel names
-    function subscribe(symbol){
-      try {
-        const channels = [
-          { name: tradeChannel, symbols: [symbol] },
-          { name: depthChannel, symbols: [symbol] }
-        ];
-        const msg = { type: "subscribe", channels: channels };
-        ws.send(JSON.stringify(msg));
-      } catch(e){ console.warn("subscribe failed", e); }
-    }
-
-    // connect handler
-    function connect(){
-      if(ws) ws.close();
-      resetStats();
-      ws = new WebSocket(WS_URL);
-
-      ws.onopen = () => {
-        connectBtn.textContent = 'Connected';
-        connectBtn.style.background = "#0a8";
-        subscribe(symbolEl.value);
-      };
-
-      ws.onclose = (ev) => {
-        connectBtn.textContent = 'Connect';
-        connectBtn.style.background = "";
-        console.log('ws closed', ev);
-      };
-
-      ws.onerror = (err) => {
-        console.warn('ws error', err);
-      };
-
-      ws.onmessage = (evt) => {
-        try {
-          const d = JSON.parse(evt.data);
-          // Delta docs use a few types; we handle common ones:
-          // If trade message
-          if (d.type === "trade" || d.type === "update" || d.type === "trades") {
-            // handle single trade or array
-            const trades = Array.isArray(d.data) ? d.data : (d.data ? [d.data] : (d.trade ? [d.trade] : []));
-            trades.forEach(t => handleTrade(t));
-          }
-          // some payloads push 'type': 'live_trades' with data objects
-          else if (d.type === "live_trades" && d.data) {
-            const trades = Array.isArray(d.data) ? d.data : [d.data];
-            trades.forEach(t => handleTrade(t));
-          }
-          // depth/orderbook payload
-          else if (d.type === "depth" || d.type === "orderbook" || d.type === "l2_snapshot" || d.type==='orderbook.10') {
-            handleDepth(d);
-          }
-          // other channel containers
-          else if (d.channel === "trades" && d.data) {
-            const trades = Array.isArray(d.data) ? d.data : [d.data];
-            trades.forEach(t => handleTrade(t));
-          }
-        } catch(e){
-          // not JSON or parser error
-          // console.log('message', evt.data);
+function connectWS(){
+  if(running) return;
+  symbol = symbolEl.value.trim();
+  if(!symbol) { alert('Choose a symbol'); return; }
+  statusEl.textContent = 'Connecting...';
+  log('Starting preload + ws for ' + symbol);
+  // preload then open websocket
+  preloadData(symbol).then(() => {
+    // open websocket after preload
+    const url = buildWsUrl(symbol);
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      running = true;
+      statusEl.textContent = 'Connected';
+      connectBtn.style.display='none';
+      disconnectBtn.style.display='inline-block';
+      log('WS open: ' + url);
+    };
+    ws.onmessage = ev => {
+      try{
+        const msg = JSON.parse(ev.data);
+        const payload = msg.data || msg;
+        // trades
+        if(payload.e === 'trade' || payload.e === 'aggTrade' || payload.p !== undefined){
+          // unify
+          const trade = payload.e ? payload : payload.data || payload;
+          // Schema: p price, q qty, m maker boolean
+          handleTradePayload({p: trade.p || trade.price, q: trade.q || trade.qty, m: trade.m || trade.m});
+        } else if(payload.b || payload.a || payload.updateId || payload.u){
+          // depth update snapshot or partial
+          // payload could be format {b:[], a:[]} (futures combined)
+          const obj = payload;
+          if(obj.b) bids = obj.b.map(x=>[parseFloat(x[0]),parseFloat(x[1])]);
+          if(obj.a) asks = obj.a.map(x=>[parseFloat(x[0]),parseFloat(x[1])]);
+          lastOrderbook = {bids:bids.slice(), asks:asks.slice()};
+          detectClustersAndSwing();
+          scheduleUI();
         }
-      };
-    }
+      }catch(e){ console.warn('ws parse', e); }
+    };
+    ws.onclose = ()=>{ running=false; statusEl.textContent='Disconnected'; connectBtn.style.display='inline-block'; disconnectBtn.style.display='none'; log('WS closed'); };
+    ws.onerror = (e)=>{ statusEl.textContent='WS error'; log('WS error'); console.error(e); };
+  });
+}
 
-    // parse trade object shapes used by Delta
-    function handleTrade(t){
-      // Delta trade object variants (common fields): side|size|price|symbol|timestamp
-      const side = (t.side || t.taker_side || t.direction || (t.buy ? 'buy' : t.sell ? 'sell' : null) || (t.maker_side ? (t.maker_side==='sell'?'buy':'sell') : null));
-      const price = t.price || t.p || t[0] || 0;
-      const size = t.size || t.qty || t.quantity || t.s || 0;
+function disconnectWS(){
+  if(ws){ ws.close(); ws = null; }
+  running = false;
+  statusEl.textContent = 'Disconnected';
+  connectBtn.style.display='inline-block';
+  disconnectBtn.style.display='none';
+}
 
-      if(!side) return;
-      // update counts & delta
-      if(side === 'buy' || side === 'Buy' || side === 'BUY'){
-        buyCount += Number(size);
-        cumDelta += Number(size);
-        recentDeltas.push(Number(size));
-      } else {
-        sellCount += Number(size);
-        cumDelta -= Number(size);
-        recentDeltas.push(-Number(size));
-      }
-      // keep rolling window
-      if(recentDeltas.length > rollingWindow) recentDeltas.shift();
-      // push UI row
-      pushTradeRow(side, price, size, t.timestamp || t.ts || '');
-      updateUI();
-    }
+// ==== Trade handler ====
+function handleTradePayload(t){
+  const price = f(t.p);
+  const qty = f(t.q);
+  const side = t.m ? 'sell' : 'buy';
+  const ts = now();
+  recentTrades.unshift({price, qty, side, ts});
+  if(recentTrades.length > 5000) recentTrades.pop();
+  // update delta/vol
+  if(side==='buy'){ buyVol += qty; cumDelta += qty; } else { sellVol += qty; cumDelta -= qty; }
+  // update price memory
+  lastPrice2 = lastPrice; lastPrice = price;
+  // add UI trade
+  const el = document.createElement('div'); el.className = 'trade ' + (side==='buy' ? 'buy':'sell');
+  el.innerHTML = `<div style="opacity:.9">${side.toUpperCase()} ${price}</div><div style="opacity:.8">${qty}</div>`;
+  tradesEl.prepend(el);
+  while(tradesEl.childElementCount > MAX_TRADES_DISPLAY) tradesEl.removeChild(tradesEl.lastChild);
+  // detect swing
+  detectSwing(price, cumDelta);
+  scheduleUI();
+}
 
-    // handle depth (top-of-book)
-    function handleDepth(d){
-      // depending on feed shape, d.bids/d.asks or d.data.bids etc.
-      const payload = d.data || d;
-      const bids = payload.bids || payload.buy || payload.asks ? (payload.bids || payload.buy) : null;
-      const asks = payload.asks || payload.sell || payload.asks ? (payload.asks || payload.sell) : null;
-      // some feeds send arrays of [price,qty]
-      const topBids = bids ? bids.slice(0,5) : [];
-      const topAsks = asks ? asks.slice(0,5) : [];
-      bidsEl.innerHTML = topBids.map(b => `<div class="small muted">${b[0]} · ${b[1]}</div>`).join('');
-      asksEl.innerHTML = topAsks.map(a => `<div class="small muted">${a[0]} · ${a[1]}</div>`).join('');
-    }
+// ==== UI update scheduling ====
+let uiTimer = null;
+function scheduleUI(){ if(uiTimer) return uiTimer = setTimeout(()=>{ uiTimer=null; updateUI(); }, 120); }
 
-    // UI wiring
-    connectBtn.addEventListener('click', () => {
-      if(ws && ws.readyState === WebSocket.OPEN) { ws.close(); connectBtn.textContent='Connect'; connectBtn.style.background=''; }
-      else connect();
-    });
-    clearBtn.addEventListener('click', resetStats);
+function updateUI(){
+  volsEl.textContent = `${buyVol.toFixed(6)} / ${sellVol.toFixed(6)}`;
+  cumlEl.textContent = cumDelta.toFixed(6);
+  // best bid/ask
+  const bidsByPrice = bids.slice().map(x=>[f(x[0]), f(x[1])]).sort((a,b)=>b[0]-a[0]);
+  const asksByPrice = asks.slice().map(x=>[f(x[0]), f(x[1])]).sort((a,b)=>a[0]-b[0]);
+  bestBidEl.textContent = bidsByPrice.length ? bidsByPrice[0][0] : '-';
+  bestAskEl.textContent = asksByPrice.length ? asksByPrice[0][0] : '-';
+  // far walls
+  computeFarWalls(bidsByPrice, asksByPrice);
+  // strength simple ratio
+  const ratio = buyVol / Math.max(sellVol, 1);
+  let strength = 'Balanced';
+  if(ratio > 1.6) strength = 'BUYERS DOMINANT';
+  else if(ratio > 1.2) strength = 'Buyers Strong';
+  else if(ratio < 0.6) strength = 'Sellers Strong';
+  else if(ratio < 0.4) strength = 'SELLERS DOMINANT';
+  strengthEl.textContent = strength;
+}
 
-    // auto connect on load for default symbol
-    window.addEventListener('load', () => {
-      currSymbolEl.textContent = symbolEl.value;
-      connect();
-    });
-  })();
-  </script>
+// ==== FAR walls: choose farthest by distance from mid price, top N by qty if requested ====
+function computeFarWalls(bidsByPrice, asksByPrice){
+  // compute mid
+  const bestB = bidsByPrice[0] ? bidsByPrice[0][0] : null;
+  const bestA = asksByPrice[0] ? asksByPrice[0][0] : null;
+  if(!bestB || !bestA){ topBidsEl.innerHTML = ''; topAsksEl.innerHTML=''; return; }
+  const mid = (bestA + bestB) / 2;
+  // compute distance and pick farthest FAR_WALL_COUNT on each side, prefer larger qty if distances equal
+  const bidsF = bidsByPrice.map(it => ({price:it[0],qty:it[1],dist:Math.abs(mid - it[0])})).sort((a,b)=>b.dist - a.dist || b.qty - a.qty).slice(0,FAR_WALL_COUNT);
+  const asksF = asksByPrice.map(it => ({price:it[0],qty:it[1],dist:Math.abs(mid - it[0])})).sort((a,b)=>b.dist - a.dist || b.qty - a.qty).slice(0,FAR_WALL_COUNT);
+  // format
+  topBidsEl.innerHTML = bidsF.map(it=>`${it.price} — ${it.qty} (Δ ${it.dist.toFixed(1)})`).join('<br>');
+  topAsksEl.innerHTML = asksF.map(it=>`${it.price} — ${it.qty} (Δ ${it.dist.toFixed(1)})`).join('<br>');
+  buyWallsEl.innerHTML = bidsByPrice.map(it=>`${it[0]} — ${it[1]}`).join('<br>');
+  sellWallsEl.innerHTML = asksByPrice.map(it=>`${it[0]} — ${it[1]}`).join('<br>');
+}
+
+// ==== Detectors: clusters, sweep, divergence ====
+function detectClustersAndSwing(){
+  const wallSize = parseFloat(wallSizeInput.value) || 200;
+  const bidsByPrice = bids.map(x=>[f(x[0]), f(x[1])]).sort((a,b)=>b[0]-a[0]).slice(0,200);
+  const asksByPrice = asks.map(x=>[f(x[0]), f(x[1])]).sort((a,b)=>a[0]-b[0]).slice(0,200);
+  // track bests & highs/lows
+  const bestB = bidsByPrice[0] ? bidsByPrice[0][0] : null;
+  const bestA = asksByPrice[0] ? asksByPrice[0][0] : null;
+  if(bestB !== null){
+    if(lastBestBid !== null && bestB < lastBestBid) log(`BestBid collapsed ${lastBestBid} → ${bestB}`);
+    lastBestBid = bestB;
+    if(lastLow === null || bestB < lastLow) lastLow = bestB;
+  }
+  if(bestA !== null){
+    if(lastBestAsk !== null && bestA > lastBestAsk) log(`BestAsk expanded ${lastBestAsk} → ${bestA}`);
+    lastBestAsk = bestA;
+    if(lastHigh === null || bestA > lastHigh) lastHigh = bestA;
+  }
+  scheduleUI();
+}
+
+// simple divergence detection: compare last few 1m deltas (aggregated locally)
+let agg1m = [];
+function aggregateConfluence(price, qty, side, ts){
+  const minute = Math.floor(ts / 60000) * 60000;
+  let b1 = agg1m.length && agg1m[agg1m.length-1].tStart === minute ? agg1m[agg1m.length-1] : null;
+  if(!b1){ b1 = {tStart:minute, buyVol:0, sellVol:0, delta:0}; agg1m.push(b1); if(agg1m.length>60) agg1m.shift(); }
+  if(side==='buy'){ b1.buyVol += qty; b1.delta += qty; } else { b1.sellVol += qty; b1.delta -= qty; }
+  // compute divergence quick
+  if(agg1m.length >= 6){
+    const recent = agg1m.slice(-6);
+    const deltas = recent.map(r=>r.delta);
+    const priceTrend = deltas.reduce((a,b)=>a+b,0);
+    if(deltas[deltas.length-1] < Math.max(...deltas) * 0.6) divergenceInfoEl.textContent = 'bear';
+    else divergenceInfoEl.textContent = '—';
+  }
+}
+
+// ==== Swing engine (sweep + delta flip) ====
+function wallShiftDetected(ob){
+  if(!lastOrderbook || !ob) return false;
+  const oldBuy = lastOrderbook.bids[0]?.[1] ?? 0;
+  const newBuy = ob.bids[0]?.[1] ?? 0;
+  const oldSell = lastOrderbook.asks[0]?.[1] ?? 0;
+  const newSell = ob.asks[0]?.[1] ?? 0;
+  return (newBuy > oldBuy * 1.4) || (newSell > oldSell * 1.4);
+}
+function fastReaction(price){
+  if(!lastPrice || !lastPrice2) return false;
+  return Math.abs(price - lastPrice2) > (Math.abs(lastPrice - lastPrice2) * 1.5);
+}
+function rateSwing(st){
+  const flags = [st.sweep, st.deltaFlip, st.momentum, st.wallShift, st.reactionSpeed];
+  const stars = flags.filter(v => v === 'YES').length;
+  return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+}
+function showSwingPanel(type, price, st){
+  const color = type === 'HIGH' ? '#ff4444' : '#00ff88';
+  const title = type === 'HIGH' ? 'SWING HIGH' : 'SWING LOW';
+  const stars = rateSwing(st);
+  const html = `
+    <div class="alertBox ${type==='HIGH' ? 'swing-high' : 'swing-low'}">
+      <strong style="color:${color};font-size:15px">${title} @ ${price}</strong><br><br>
+      • Liquidity Sweep: <b>${st.sweep}</b><br>
+      • Delta Flip: <b>${st.deltaFlip}</b><br>
+      • Momentum: <b>${st.momentum}</b><br>
+      • Wall Shift: <b>${st.wallShift}</b><br>
+      • Reaction Speed: <b>${st.reactionSpeed}</b><br>
+      <hr>
+      <b>Swing Rating: ${stars}</b>
+    </div>
+  `;
+  swingPanelContainer.innerHTML = html + swingPanelContainer.innerHTML;
+  log(`${title} @ ${price} | ${stars}`);
+}
+function detectSwing(price, delta){
+  const lastSide = delta > 0 ? 'buy':'sell';
+  const deltaFlipToBuy = lastDeltaSide === 'sell' && lastSide === 'buy';
+  const deltaFlipToSell = lastDeltaSide === 'buy' && lastSide === 'sell';
+  const sweepHigh = (lastHigh !== null) && (price > lastHigh);
+  const sweepLow  = (lastLow !== null) && (price < lastLow);
+  const momentum = Math.abs(delta) > 20;
+  const wallShift = wallShiftDetected(lastOrderbook);
+  const reaction = fastReaction(price);
+  const swingStatus = {
+    sweep: (sweepHigh || sweepLow) ? 'YES' : 'NO',
+    deltaFlip: (deltaFlipToBuy || deltaFlipToSell) ? 'YES' : 'NO',
+    momentum: momentum ? 'YES' : 'NO',
+    wallShift: wallShift ? 'YES' : 'NO',
+    reactionSpeed: reaction ? 'YES' : 'NO'
+  };
+  // Fire only when both mandatory checks meet
+  if(sweepHigh && deltaFlipToSell) showSwingPanel('HIGH', price, swingStatus);
+  if(sweepLow && deltaFlipToBuy) showSwingPanel('LOW', price, swingStatus);
+  lastDeltaSide = lastSide;
+  if(lastHigh === null || price > lastHigh) lastHigh = price;
+  if(lastLow === null || price < lastLow) lastLow = price;
+  // aggregate confluence
+  aggregateConfluence(price, 0, (lastSide==='buy'?'buy':'sell'), now());
+}
+
+// ==== UI interactions ====
+connectBtn.addEventListener('click', connectWS);
+disconnectBtn.addEventListener('click', disconnectWS);
+clearBtn.addEventListener('click', ()=>{
+  buyVol=0; sellVol=0; cumDelta=0; recentTrades=[]; bids=[]; asks=[]; lastOrderbook=null;
+  swingPanelContainer.innerHTML=''; tradesEl.innerHTML=''; logsEl.textContent=''; updateUI(); log('State cleared');
+});
+downloadBtn.addEventListener('click', ()=>{
+  const rows = ['side,price,qty'];
+  bids.forEach(b=>rows.push(`bid,${b[0]},${b[1]}`));
+  asks.forEach(a=>rows.push(`ask,${a[0]},${a[1]}`));
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `${symbol}_l2_snapshot.csv`; a.click(); URL.revokeObjectURL(url);
+});
+
+// ==== init ====
+(async function init(){
+  await loadSymbols();
+  // set default selection to BTCUSD/BTCUSDT
+  try{ symbolEl.value = symbolsList.includes('BTCUSDT') ? 'BTCUSDT' : (symbolsList.includes('BTCUSD') ? 'BTCUSD' : symbolEl.value); }catch(e){}
+  log('Ready. Choose symbol and click Connect.');
+})();
+
+// lightweight UI loop
+setInterval(()=>{ scheduleUI(); }, 1000);
+
+</script>
 </body>
 </html>
